@@ -46,6 +46,4 @@ yAxisG.call(d3.axisLeft(y).tickSize(0));
 ### 執行
 使用 VS Code + Live Server 開啟 `index.html`，或部署到 GitHub Pages。
 
-建議 Repository 名稱：
 
-`1151VIS-HW2-414226307-BoZhiYao`
