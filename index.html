@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HW2 - Dynamic Visualization using D3.js</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="page">
+<header>
+<p class="eyebrow">Data Analytics and Visualization Applications · HW2</p>
+<h1>台灣縣市人口變化：動態比較</h1>
+<p class="lead">以 2026 年 9 月人口年增減率為基礎，除了原始百分比之外，也換算成「每 10 萬人相當變動人數」，讓不同人口規模的縣市用相同分母比較。</p>
+</header>
+
+<section class="controls">
+<div class="control-group">
+<span class="control-label">比較指標</span>
+<button class="metric-btn active" data-metric="per100k">每 10 萬人相當變動</button>
+<button class="metric-btn" data-metric="rate">人口年增減率</button>
+</div>
+<div class="control-group">
+<span class="control-label">排序</span>
+<select id="sortSelect">
+<option value="desc">由高到低</option>
+<option value="asc">由低到高</option>
+<option value="name">依縣市名稱</option>
+</select>
+</div>
+</section>
+
+<section class="chart-card">
+<div class="chart-title-row">
+<div>
+<h2 id="chartTitle">每 10 萬人相當變動人數</h2>
+<p id="chartSubtitle">相同分母比較</p>
+</div>
+<div class="legend"><span><i class="dot positive"></i> 人口增加</span><span><i class="dot negative"></i> 人口減少</span></div>
+</div>
+<div id="chart"></div>
+<div id="tooltip" class="tooltip"></div>
+<div class="note"><strong>說明：</strong>每 10 萬人相當變動人數 = 人口年增減率 × 1000。例如 +0.25% = 每 10 萬人相當增加 250 人。</div>
+</section>
+
+<footer>
+<p><strong>資料來源：</strong>內政部戶政司，民國 115 年 9 月戶口統計資料分析（2026/10/08）。</p>
+<p><strong>互動：</strong>指標切換、動態排序、滑鼠 Tooltip、transition 動畫。</p>
+</footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script>
+const margin={top:30,right:110,bottom:70,left:95};
+const outerWidth=980,outerHeight=560;
+const width=outerWidth-margin.left-margin.right;
+const height=outerHeight-margin.top-margin.bottom;
+
+let currentMetric="per100k";
+let currentSort="desc";
+let allData=[];
+
+const cfg={
+ per100k:{
+  title:"每 10 萬人相當變動人數",
+  subtitle:"相同分母比較",
+  axis:"每 10 萬人相當變動人數",
+  format:d=>`${d>0?"+":""}${d3.format(",")(d)} 人`,
+  pad:150
+ },
+ rate:{
+  title:"人口年增減率",
+  subtitle:"與去年同月相比",
+  axis:"人口年增減率（%）",
+  format:d=>`${d>0?"+":""}${d.toFixed(2)}%`,
+  pad:0.12
+ }
+};
+
+const svg=d3.select("#chart").append("svg")
+ .attr("viewBox",`0 0 ${outerWidth} ${outerHeight}`)
+ .append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+const gridG=svg.append("g").attr("class","grid");
+const xAxisG=svg.append("g").attr("class","x-axis").attr("transform",`translate(0,${height})`);
+const yAxisG=svg.append("g").attr("class","y-axis");
+const barsG=svg.append("g");
+const labelsG=svg.append("g");
+const zeroLine=svg.append("line").attr("class","zero-line");
+const axisTitle=svg.append("text").attr("class","axis-title").attr("x",width/2).attr("y",height+58).attr("text-anchor","middle");
+const tooltip=d3.select("#tooltip");
+
+function getSorted(){
+ const d=[...allData];
+ if(currentSort==="desc") d.sort((a,b)=>d3.descending(a[currentMetric],b[currentMetric]));
+ else if(currentSort==="asc") d.sort((a,b)=>d3.ascending(a[currentMetric],b[currentMetric]));
+ else d.sort((a,b)=>d3.ascending(a.county,b.county));
+ return d;
+}
+
+function update(){
+ const config=cfg[currentMetric],data=getSorted();
+ d3.select("#chartTitle").text(config.title);
+ d3.select("#chartSubtitle").text(config.subtitle);
+ axisTitle.text(config.axis);
+
+ const min=d3.min(data,d=>d[currentMetric]),max=d3.max(data,d=>d[currentMetric]);
+ const x=d3.scaleLinear().domain([Math.min(0,min-config.pad),Math.max(0,max+config.pad)]).nice().range([0,width]);
+
+ // Y 軸：每個縣市配置在不同的垂直位置
+ const y=d3.scaleBand().domain(data.map(d=>d.county)).range([0,height]).padding(0.28);
+
+ gridG.attr("transform",`translate(0,${height})`).transition().duration(650)
+  .call(d3.axisBottom(x).ticks(7).tickSize(-height).tickFormat(""));
+
+ xAxisG.transition().duration(650)
+  .call(d3.axisBottom(x).ticks(7).tickFormat(d=>currentMetric==="rate"?`${d}%`:d3.format(",")(d)));
+
+ yAxisG.transition().duration(650)
+  .call(d3.axisLeft(y).tickSize(0))
+  .selection().call(g=>g.select(".domain").remove());
+
+ zeroLine.transition().duration(650)
+  .attr("x1",x(0)).attr("x2",x(0)).attr("y1",0).attr("y2",height);
+
+ barsG.selectAll("rect").data(data,d=>d.county).join(
+  enter=>enter.append("rect")
+   .attr("class",d=>`bar ${d[currentMetric]>=0?"positive-bar":"negative-bar"}`)
+   .attr("x",x(0)).attr("y",d=>y(d.county)).attr("width",0).attr("height",y.bandwidth()).attr("rx",6)
+   .call(e=>e.transition().duration(650).attr("x",d=>d[currentMetric]>=0?x(0):x(d[currentMetric])).attr("width",d=>Math.abs(x(d[currentMetric])-x(0)))),
+  update=>update
+   .attr("class",d=>`bar ${d[currentMetric]>=0?"positive-bar":"negative-bar"}`)
+   .call(u=>u.transition().duration(650).attr("x",d=>d[currentMetric]>=0?x(0):x(d[currentMetric])).attr("y",d=>y(d.county)).attr("width",d=>Math.abs(x(d[currentMetric])-x(0))).attr("height",y.bandwidth()))
+ ).on("mousemove",function(event,d){
+   tooltip.html(`<strong>${d.county}</strong><br>年增減率：${d.rate>0?"+":""}${d.rate.toFixed(2)}%<br>每 10 萬人相當變動：${d.per100k>0?"+":""}${d3.format(",")(d.per100k)} 人`)
+    .style("opacity",1).style("left",`${event.pageX+14}px`).style("top",`${event.pageY-28}px`);
+ }).on("mouseleave",()=>tooltip.style("opacity",0));
+
+ labelsG.selectAll("text").data(data,d=>d.county).join("text")
+  .attr("class","value-label")
+  .text(d=>config.format(d[currentMetric]))
+  .attr("text-anchor",d=>d[currentMetric]>=0?"start":"end")
+  .transition().duration(650)
+  .attr("x",d=>d[currentMetric]>=0?x(d[currentMetric])+10:x(d[currentMetric])-10)
+  .attr("y",d=>y(d.county)+y.bandwidth()/2)
+  .attr("dy","0.35em");
+}
+
+d3.csv("data.csv",d=>({county:d.county,rate:+d.rate,per100k:+d.per100k,group:d.group}))
+ .then(data=>{allData=data;update();});
+
+d3.selectAll(".metric-btn").on("click",function(){
+ d3.selectAll(".metric-btn").classed("active",false);
+ d3.select(this).classed("active",true);
+ currentMetric=this.dataset.metric;
+ update();
+});
+
+d3.select("#sortSelect").on("change",function(){
+ currentSort=this.value;
+ update();
+});
+</script>
+</body>
+</html>
