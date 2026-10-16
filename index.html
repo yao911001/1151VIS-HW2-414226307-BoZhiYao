@@ -24,7 +24,22 @@ zero.transition().duration(520).attr("x1",x(0)).attr("x2",x(0)).attr("y1",0).att
 const b=bars.selectAll("rect").data(visible,d=>d.county).join(enter=>enter.append("rect").attr("class",d=>`bar ${d.change>=0?"pos":"neg"}`).attr("x",x(0)).attr("y",d=>y(d.county)).attr("height",y.bandwidth()).attr("width",0).attr("rx",4),update=>update,exit=>exit.transition().duration(200).attr("width",0).remove());
 b.attr("class",d=>`bar ${d.change>=0?"pos":"neg"}`).transition().duration(520).attr("x",d=>Math.min(x(0),x(d[metric]))).attr("y",d=>y(d.county)).attr("width",d=>Math.abs(x(d[metric])-x(0))).attr("height",y.bandwidth());
 b.on("mousemove",(e,d)=>{tooltip.html(`<b>${d.county}</b><div>2025/09：${fmt(d.population_2025)} 人</div><div>2026/09：${fmt(d.population_2026)} 人</div><div>實際增減：${signed(d.change)} 人</div><div>年增減率：${pct(d.rate)}</div><div>每10萬人：${d3.format("+,.1f")(d.per100k)} 人</div>`).style("opacity",1).style("left",Math.min(e.clientX+14,window.innerWidth-290)+"px").style("top",Math.max(8,e.clientY-85)+"px")}).on("mouseleave",()=>tooltip.style("opacity",0));
-labels.selectAll("text").data(visible,d=>d.county).join(enter=>enter.append("text").attr("class","value").attr("dy",".35em"),update=>update,exit=>exit.remove()).text(d=>cfg[metric].val(d[metric])).attr("text-anchor",d=>d[metric]>=0?"start":"end").transition().duration(520).attr("x",d=>x(d[metric])+(d[metric]>=0?9:-9)).attr("y",d=>y(d.county)+y.bandwidth()/2);
+// 避免金門縣等較大的負值標籤超出繪圖範圍、與 Y 軸文字重疊。
+// 足夠長的負向長條：白字放在長條內；其餘：深色文字置於長條外。
+const labelInside = d => d[metric] < 0 && Math.abs(x(d[metric])-x(0)) >= 105;
+labels.selectAll("text").data(visible,d=>d.county)
+  .join(
+    enter=>enter.append("text").attr("class","value").attr("dy",".35em"),
+    update=>update,
+    exit=>exit.remove()
+  )
+  .text(d=>cfg[metric].val(d[metric]))
+  .attr("text-anchor",d=>labelInside(d)?"start":d[metric]>=0?"start":"end")
+  .attr("fill",d=>labelInside(d)?"#ffffff":"#334155")
+  .style("font-weight",d=>labelInside(d)?"700":"650")
+  .transition().duration(520)
+  .attr("x",d=>labelInside(d)?x(d[metric])+10:x(d[metric])+(d[metric]>=0?9:-9))
+  .attr("y",d=>y(d.county)+y.bandwidth()/2);
 axisTitle.text(cfg[metric].label).attr("x",width/2).attr("y",h+47);d3.select("#chartTitle").text(cfg[metric].title);d3.select("#subtitle").text(cfg[metric].sub);
 }
 d3.csv("data.csv",d=>({county:d.county,population_2025:+d.population_2025,population_2026:+d.population_2026,change:+d.change,rate:+d.rate,per100k:+d.per100k})).then(v=>{if(v.length!==22||v.some(d=>!Number.isFinite(d.change)))throw Error("資料不是有效的22縣市資料");data=v;const old=d3.sum(v,d=>d.population_2025),now=d3.sum(v,d=>d.population_2026),delta=now-old;d3.select("#totalOld").text(fmt(old));d3.select("#totalNew").text(fmt(now));d3.select("#totalChange").text(signed(delta));d3.select("#nationalRate").text(pct(delta/old*100)+"（與去年同期比較）");update()}).catch(e=>{console.error(e);d3.select("#chart").append("p").attr("class","error").text("無法讀取 data.csv。請確認檔案位於同一資料夾，並使用 Live Server / GitHub Pages。")});
